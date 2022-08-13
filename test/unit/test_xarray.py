@@ -18,8 +18,8 @@ class TestXarray(ut.TestCase):
             return (matrix_inv*d).sum(dim="in")
 
         nsamples=50
-        p1=np.linspace(0,10,nsamples)
-        p2=np.linspace(0,10,nsamples)
+        p1=np.linspace(-50,60,nsamples)
+        p2=np.linspace(-90,100,nsamples)
         p1m, p2m=np.meshgrid(p1, p2,indexing='ij')
         parameters=xr.DataArray([p1m, p2m], dims=["in", "p1", "p2"], coords={"in":("in",["i1","i2"]),"p1":p1, "p2":p2})
         values=f(parameters)
