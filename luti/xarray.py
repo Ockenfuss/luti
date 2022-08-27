@@ -27,7 +27,5 @@ def invert_data_array(data, input_dims, output_dim, output_grid, interpolator=De
 
     data_inv = xr.apply_ufunc(
         lambda yold: invert_np(xold, yold, ynew),datam,input_core_dims=[["samples", output_dim]],output_core_dims=[["newsamples", "input_dim"]],vectorize=True)
-    print(newdims)
-    print(ynew)
     data_inv = xr_reshape(data_inv, "newsamples", newdims, ynew.T)
     return data_inv
