@@ -6,14 +6,13 @@ Facilitating the handling of lookup-tables, including interpolation and inversio
 
 <!-- code_chunk_output -->
 
-- [Luti - LookUp Tables & Inversion](#luti---lookup-tables--inversion)
-  - [Introduction](#introduction)
-  - [Usage](#usage)
-    - [Vectorset and Vectorfunction](#vectorset-and-vectorfunction)
-    - [Interpolating](#interpolating)
-    - [Checking](#checking)
-  - [Inversion](#inversion)
-    - [Xarray](#xarray)
+- [Introduction](#introduction)
+- [Usage](#usage)
+  - [Vectorset and Vectorfunction](#vectorset-and-vectorfunction)
+  - [Interpolating](#interpolating)
+  - [Checking](#checking)
+- [Inversion](#inversion)
+  - [Xarray](#xarray)
 
 <!-- /code_chunk_output -->
 
@@ -84,27 +83,28 @@ input_parameters=interpolator(vs_meas)
 checker=luti.ConvexHullChecker(lookup_table)
 checker.check_fill(input_parameters)#set values outside lookup table to NaN
 ```
-Keep in mind that (so far), `luti` does not check for invertibility of `f:R^n->R^m`! If `f` is not invertible, invalid output will be produced.
+> :warning: So far, `luti` does not check for unambigous invertibility of `f:R^n->R^m`! If `f` is not invertible, invalid output will be produced.
 ### Xarray
 The above approach still requires an interpolation for every measurement. For really big datasets, it might be convenient to create a completely inverted lookup table as xarray DataArray, based on a regular grid. At this point, it is instructive to think about the different ways to represent a vectorfunction in xarray
 
 1) **Two DataArrays**, in 2D tabular form:
-  Two DataArrays Parameters[samples, ndim] and Values[samples, mdim], representing the input parameters and simulated values. This is similar to what is internally done in Vectorfunction objects.
+  Two DataArrays *Parameters[samples, ndim]* and *Values[samples, mdim]*, representing the input parameters and simulated values. This is similar to what is internally done in Vectorfunction objects.
 
-2) **One DataArray**, encoding Parameters in the coordinates and Values in an extra dim:
-  Data[n1,n2,n3,..., mdim]. To get the Parameters in format [samples, ndim], you need to form the cartesian product between n1xn2xn3... or use 'stack(n1, n2, n3, ...)'. This representation is maybe the most natural form, which you often obtain when evaluating an equation or model over a space of input parameters.
+2) **One DataArray**, encoding parameters in the coordinates and values in an extra dim:
+  *Data[n1,n2,n3,..., mdim]*. To get the parameters in format *[samples, ndim]*, you need to form the cartesian product between n1xn2xn3... or use 'stack(n1, n2, n3, ...)'. This representation is maybe the most natural form, which you often obtain when evaluating an equation or model over a space of input parameters.
 
 3) **A Dataset with two DataArrays**, representing Parameters and Values of 1).
 
-4) **A Dataset with m Arrays**, representing the Values with names according to the mdim-Dimension in 2).
+4) **A Dataset with m Arrays**, representing the Values with names according to the mdim-Dimension in 2):
    `dataset:{ Variables: [m1, m2, m3, ...], Coordinates: [n1, n2, n3, ...]}`
 
-`luti.xarray.invert_data_array` is a high level function to do such an inversion of a DataArray in format 2). Therefore, you have to provide the names of the coordinates belonging to the Parameters (input_dims) and the coordinate which describes the simulation output values (output_dim). Additionally, for each label along output_dim, you have to provide a list of values, which will form the regular grid of the inverted table. The following gives a minimal example with `n=m=1`:
+`luti.xarray.invert_data_array` is a high level function to do such an inversion of a DataArray in format 2). Therefore, you have to provide the names of the coordinates belonging to the Parameters (input_params) and the coordinate which describes the simulation output values (output_dim). Additionally, for each label along output_dim, you have to provide a list of values, which will form the regular grid of the inverted table. The following gives a minimal example with `n=m=1`:
 ```python
 import luti
 from luti.xarray import invert_data_array
 import numpy as np
 import xarray as xr
+
 def model(params):
   return 2*params
 
@@ -112,5 +112,6 @@ sim_parameters=np.linspace(0,1,5)
 sim_values=model(sim_parameters)
 sim_data=xr.DataArray(sim_values,coords=[("sim_params", sim_parameters)])
 sim_data=sim_data.expand_dims({"out":["o1"]}) #We need an extra dimension R^m for the simulation output, even if m=1
-data_inv=invert_data_array(sim_data, input_dims=["sim_params"], output_dim="out", output_grid={"o1":np.linspace(0,2,10)})
+data_inv=invert_data_array(sim_data, input_params=["sim_params"], output_dim="out", output_grid={"o1":np.linspace(0,2,10)})
 ```
+If there are additional dimensions present, `invert_data_array` repeats the inversion along every dimension not listed in `input_params` or `output_dim`.
