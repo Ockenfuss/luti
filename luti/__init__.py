@@ -285,7 +285,7 @@ class LinearInterpolator(Interpolator):
             self.normfactor = normfactors(vectorfunction)
         norm_points=vectorfunction.get_points() / self.normfactor
         if self.ndim==1:
-            self.interpolator = interp1d(norm_points[:,0], vectorfunction.get_values(), axis=0) #NdInterpolator works only for >1 dimensions
+            self.interpolator = interp1d(norm_points[:,0], vectorfunction.get_values(), axis=0, bounds_error=False) #NdInterpolator works only for >1 dimensions
         else:
             self.interpolator = LinearNDInterpolator(norm_points, vectorfunction.get_values())
 
