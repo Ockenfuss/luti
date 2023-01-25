@@ -55,7 +55,7 @@ vf_interpolated=interpolator(vs)
 #Alternatives:
 interpolator=NeighbourInterpolator(vf) #Uses nearest neighbours based on sklearn
 interpolator=GriddataInterpolator(vf) #Uses scipy.interpolate.griddata interpolation
-interpolator=RadialInterpolator(vf) #Uses scipy.interpolate.Rbf for interpolation
+interpolator=RbfInterpolator(vf) #Uses scipy.interpolate.Rbf for interpolation
 ```
 
 ### Checking
