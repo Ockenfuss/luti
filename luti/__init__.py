@@ -1,9 +1,9 @@
-from numpy.testing._private.utils import IgnoreException
 import xarray as xr
 import numpy as np
 import alphashape
 import shapely.vectorized
 from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import MinMaxScaler
 from scipy.interpolate import Rbf, griddata, LinearNDInterpolator, interp1d
 from scipy.spatial import Delaunay
 from luti.Helpers import ShapeError, DimensionError
@@ -42,6 +42,9 @@ class Vectorset(object):
 
     def to_dataarray(self, similar_to, coord_dim=None):
         return self._np_to_dataarray(self.get_points(), similar_to, coord_dim)
+    
+    def copy(self):
+        return Vectorset(self.get_points().copy())
 
 
 class Vectorfunction(Vectorset):
@@ -91,21 +94,94 @@ class Vectorfunction(Vectorset):
     def __str__(self):
         return super().__str__() + '\n\nValues:\n' + repr(self.values)
 
+    def copy(self):
+        return Vectorfunction(self.get_points().copy(), self.get_values().copy())
 
-def normfactors(vectorset: Vectorset):
-    return np.amax(vectorset.get_points(), axis=0) - np.amin(vectorset.get_points(), axis=0)
 
 
-class Checker(object):
-    def __init__(self, vectorset: Vectorset = None):
-        raise(NotImplementedError)
 
+class Transformer(object):
+    def __init__(self) -> None:
+        raise NotImplementedError()
+    def transform(self, vs):
+        raise NotImplementedError()
+    def fit(self, vs):
+        raise NotImplementedError()
+    def fit_transform(self, vs):
+        self.fit(vs)
+        return self.transform(vs)
+    def __call__(self, vs):
+        return self.transform(vs)
+
+class Scaler(Transformer):
+    def __init__(self):
+        super().__init__()
+
+class IdentityScaler(Scaler): 
+    def __init__(self) -> None:
+        pass
+    def fit(self, vs):
+        pass
+    def transform(self, vs):
+        return vs
+
+class sklearn_scaler_factory(Scaler):
+    def __init__(self, sklearn_preprocessing_scaler):
+        self.scaler=sklearn_preprocessing_scaler
+    def fit(self, vs):
+        self.scaler.fit(vs.get_points())
+
+    def transform(self, vs: Vectorset | Vectorfunction):
+        points=self.scaler.transform(vs.get_points())
+        vs_return=vs.copy()
+        vs_return.points=points
+        return vs_return
+    
+
+class UnitScaler(sklearn_scaler_factory):
+    def __init__(self):
+        super().__init__(MinMaxScaler())
+
+
+class Scalable(object):
+    def __init__(self, norm=False):
+        self.scaler=self._get_scaler(norm)
+
+    def _get_scaler(self, norm):
+        if type(norm)==bool and norm:
+            scaler=self.default_scaler
+        elif type(norm)==bool and not norm:
+            scaler=IdentityScaler()
+        elif isinstance(norm, Scaler):
+            scaler=norm
+        else:
+            raise TypeError("Norm must be of type bool or luti.Scaler.")
+        return scaler
+
+
+class Checker(Scalable):
+    def __init__(self, vectorset: Vectorset = None, norm=False):
+        super().__init__(norm)
+        if vectorset is not None:
+            self.initialize(vectorset)
+        
     def initialize(self, vectorset: Vectorset):
         self.ndim=vectorset.ndim
+        self._initialize(self.scaler.fit_transform(vectorset))
+    
+    def _initialize(self, vectorset: Vectorset):
+        raise NotImplementedError()
 
-    def check(self, vectorset: Vectorset) -> np.ndarray:
+    def _valid_input(self, vectorset: Vectorset) -> np.ndarray:
         if vectorset.ndim!=self.ndim:
             raise ValueError(f"Can not check {vectorset.ndim}-D data because initialization happened with {self.ndim}-D data.")
+
+    def check(self, vectorset: Vectorset):
+        self._valid_input(vectorset)
+        return self._check(self.scaler.transform(vectorset))
+
+    def _check(self, vectorset: Vectorset):
+        raise NotImplementedError()
 
     def check_fill(self, vectorfunction: Vectorfunction, fill=np.nan):
         mask = self.check(vectorfunction)
@@ -120,55 +196,43 @@ class Checker(object):
 class Alphachecker(Checker):
     def __init__(self, vectorset: Vectorset = None, alpha: float = 0.0):
         self.alpha=alpha
-        if vectorset is not None:
-          self.initialize(vectorset)
+        super().__init__(vectorset=vectorset)
+        
 
-    def initialize(self, vectorset: Vectorset):
-        super().initialize(vectorset)
+    def _initialize(self, vectorset: Vectorset):
         if vectorset.get_points().ndim != 2 or self.ndim != 2:
             raise ValueError("Alphashapes are available for more than 2 dimensions since vers. 1.3.0., but the 'check' function needs to be implemented.")
         self.alphashape = alphashape.alphashape(vectorset.get_points(), self.alpha)
 
-    def check(self, vectorset: Vectorset):
-        super().check(vectorset)
+    def _check(self, vectorset: Vectorset):
         points = vectorset.get_points()
         return shapely.vectorized.contains(self.alphashape, points[:, 0], points[:, 1])
 
 
 class Distancechecker(Checker):
     def __init__(self, vectorset: Vectorset = None, threshold: float=1.0, norm=True):
+        self.default_scaler=UnitScaler()
         self.threshold = threshold
-        self.norm=norm
-        if vectorset is not None:
-          self.initialize(vectorset)
+        super().__init__(vectorset=vectorset, norm=norm)
     
-    def initialize(self, vectorset: Vectorset):
-        super().initialize(vectorset)
-        if self.norm:
-            self.normfactor = normfactors(vectorset)
-        else:
-            self.normfactor = 1
-        self.nbs = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(vectorset.get_points() / self.normfactor)
+    def _initialize(self, vectorset: Vectorset):
+        self.nbs = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(vectorset.get_points())
 
-    def check(self, vectorset: Vectorset):
-        super().check(vectorset)
-        distance, indices = self.nbs.kneighbors(vectorset.get_points() / self.normfactor)
+    def _check(self, vectorset: Vectorset):
+        distance, indices = self.nbs.kneighbors(vectorset.get_points())
         return distance[:, 0] < self.threshold
 
 class BoxChecker(Checker):
     """Check if checkpoints are within the bounding box, defined by the maximum/minimum extend of the pointcloud in every direction.
     """
     def __init__(self, vectorset: Vectorset = None):
-        if vectorset is not None:
-            self.initialize(vectorset)
+        super().__init__(vectorset=vectorset)
 
-    def initialize(self, vectorset: Vectorset):
-        super().initialize(vectorset)
+    def _initialize(self, vectorset: Vectorset):
         self.mins=vectorset.get_points().min(axis=0)
         self.maxs=vectorset.get_points().max(axis=0)
     
-    def check(self, vectorset: Vectorset):
-        super().check(vectorset)
+    def _check(self, vectorset: Vectorset):
         mask=(vectorset.get_points()>=self.mins ) * (vectorset.get_points()<=self.maxs)
         return np.all(mask, axis=1)
 
@@ -177,18 +241,15 @@ class ConvexHullChecker(Checker):
     For 1D data, use a BoxChecker to check only min/max values.
     """
     def __init__(self, vectorset: Vectorset = None):
-        if vectorset is not None:
-            self.initialize(vectorset)
+        super().__init__(vectorset=vectorset)
         
-    def initialize(self, vectorset: Vectorset):
-        super().initialize(vectorset)
+    def _initialize(self, vectorset: Vectorset):
         if self.ndim==1:
             self.boxchecker=BoxChecker(vectorset)
         else:
             self.hull=Delaunay(vectorset.get_points())
     
-    def check(self, vectorset: Vectorset):
-        super().check(vectorset)
+    def _check(self, vectorset: Vectorset):
         if self.ndim==1:
             return self.boxchecker(vectorset)
         return self.hull.find_simplex(vectorset.get_points())>=0
@@ -200,14 +261,26 @@ class DefaultChecker(ConvexHullChecker):
 
 
 
-class Interpolator(object):
-    def __init__(self, vectorfunction: Vectorfunction = None):
-        raise NotImplementedError
+class Interpolator(Scalable):
+    def __init__(self, vectorfunction: Vectorfunction = None, norm=False):
+        super().__init__(norm)
+        if vectorfunction is not None:
+            self.initialize(vectorfunction)
+
     
     def initialize(self, vectorfunction: Vectorfunction):
+        self._initialize(self.scaler.fit_transform(vectorfunction))
+    
+    def _initialize(self, vectorfunction: Vectorfunction):
         raise NotImplementedError
 
+
     def interp(self, vectorset: Vectorset) -> Vectorfunction:
+        values=self._interp(self.scaler.transform(vectorset))
+        return Vectorfunction(vectorset.get_points(), values)
+
+
+    def _interp(self, vectorfunction: Vectorfunction):
         raise NotImplementedError
 
     def __call__(self, vectorset: Vectorset):
@@ -216,38 +289,30 @@ class Interpolator(object):
 
 class RbfInterpolator(Interpolator):
     def __init__(self, vectorfunction: Vectorfunction = None, norm=True):
-      self.norm=norm
-      if vectorfunction is not None:
-        self.initialize(vectorfunction)
+        self.default_scaler=UnitScaler()
+        super().__init__(vectorfunction=vectorfunction, norm=norm)
 
-    def initialize(self, vectorfunction: Vectorfunction):
-        self.normfactor = 1
-        if self.norm:
-            self.normfactor = normfactors(vectorfunction)
-        self.interpolators = [Rbf(*(vectorfunction.get_points() / self.normfactor).T, d, function='linear', smooth=0.0) for d in vectorfunction.get_values().T]
+    def _initialize(self, vectorfunction: Vectorfunction):
+        self.interpolators = [Rbf(*(vectorfunction.get_points()).T, d, function='linear', smooth=0.0) for d in vectorfunction.get_values().T]
 
-    def interp(self, vectorset: Vectorset):
-        values = np.array([interp(*(vectorset.get_points() / self.normfactor).T) for interp in self.interpolators])
-        return Vectorfunction(vectorset.get_points(), values.T)
+    def _interp(self, vectorset: Vectorset):
+        return np.array([interp(*(vectorset.get_points()).T) for interp in self.interpolators]).T
 
 
 class NeighbourInterpolator(Interpolator):
     def __init__(self, vectorfunction: Vectorfunction = None, norm=True):
-      self.norm=norm
-      if vectorfunction is not None:
-        self.initialize(vectorfunction)
+        self.default_scaler=UnitScaler()
+        super().__init__(vectorfunction=vectorfunction, norm=norm)
 
-    def initialize(self, vectorfunction: Vectorfunction):
-        self.normfactor=1
-        if self.norm:
-            self.normfactor = normfactors(vectorfunction)
-        self.nbs = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(vectorfunction.get_points() / self.normfactor)
+    def _initialize(self, vectorfunction: Vectorfunction):
+        self.nbs = NearestNeighbors(n_neighbors=1, algorithm='auto').fit(vectorfunction.get_points())
         self.values = vectorfunction.get_values()
         self.points = vectorfunction.get_points()
 
-    def interp(self, vectorset: Vectorset):
-        indices = self.nbs.kneighbors(vectorset.get_points() / self.normfactor, return_distance=False)[:, 0]
-        return Vectorfunction(self.points[indices, :], self.values[indices, :])
+    def _interp(self, vectorset: Vectorset):
+        indices = self.nbs.kneighbors(vectorset.get_points(), return_distance=False)[:, 0]
+        return self.values[indices,:]
+        # return Vectorfunction(self.points[indices, :], self.values[indices, :])
 
 
 class GriddataInterpolator(Interpolator):
@@ -258,44 +323,35 @@ class GriddataInterpolator(Interpolator):
             vectorfunction ([Vectorfunction]): Simulation data as Vectorfunction.
             norm (bool, optional): Normalize all dimensions to cover a range between 0 and 1. Defaults to True.
         """
-        self.norm=norm
-        if vectorfunction is not None:
-          self.initialize(vectorfunction)
+        self.default_scaler=UnitScaler()
+        super().__init__(vectorfunction=vectorfunction, norm=norm)
 
-    def initialize(self, vectorfunction: Vectorfunction):
-        self.normfactor = 1
-        if self.norm:
-            self.normfactor = normfactors(vectorfunction)
+    def _initialize(self, vectorfunction: Vectorfunction):
         self.vf = vectorfunction
 
-    def interp(self, vectorset: Vectorset):
-        values = np.array([griddata(self.vf.get_points() / self.normfactor, val, vectorset.get_points() / self.normfactor) for val in self.vf.get_values().T])
-        return Vectorfunction.from_vectorset(vectorset, values.T)
+    def _interp(self, vectorset: Vectorset):
+        return np.array([griddata(self.vf.get_points(), val, vectorset.get_points()) for val in self.vf.get_values().T]).T
 
 class LinearInterpolator(Interpolator):
     def __init__(self, vectorfunction: Vectorfunction = None, norm=True):
-        self.norm=norm
-        if vectorfunction is not None:
-          self.initialize(vectorfunction)
+        self.default_scaler=UnitScaler()
+        super().__init__(vectorfunction=vectorfunction, norm=norm)
 
-    def initialize(self, vectorfunction: Vectorfunction):
-        self.normfactor = 1
+    def _initialize(self, vectorfunction: Vectorfunction):
         self.ndim=vectorfunction.ndim
-        if self.norm:
-            self.normfactor = normfactors(vectorfunction)
-        norm_points=vectorfunction.get_points() / self.normfactor
+        points=vectorfunction.get_points()
         if self.ndim==1:
-            self.interpolator = interp1d(norm_points[:,0], vectorfunction.get_values(), axis=0, bounds_error=False) #NdInterpolator works only for >1 dimensions
+            self.interpolator = interp1d(points[:,0], vectorfunction.get_values(), axis=0, bounds_error=False) #NdInterpolator works only for >1 dimensions
         else:
-            self.interpolator = LinearNDInterpolator(norm_points, vectorfunction.get_values())
+            self.interpolator = LinearNDInterpolator(points, vectorfunction.get_values())
 
-    def interp(self, vectorset: Vectorset):
-        norm_points=vectorset.get_points() / self.normfactor
+    def _interp(self, vectorset: Vectorset):
+        points=vectorset.get_points()
         assert(vectorset.ndim==self.ndim)
         if self.ndim==1:
-            norm_points=norm_points[:,0]
-        values= self.interpolator(norm_points)
-        return Vectorfunction(vectorset.get_points(), values)
+            points=points[:,0]
+        values= self.interpolator(points)
+        return values
 
 #Define a default matcher used as a default in other luti functions
 class DefaultInterpolator(LinearInterpolator):

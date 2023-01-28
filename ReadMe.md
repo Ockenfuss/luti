@@ -6,13 +6,14 @@ Facilitating the handling of lookup-tables, including interpolation and inversio
 
 <!-- code_chunk_output -->
 
-- [Introduction](#introduction)
-- [Usage](#usage)
-  - [Vectorset and Vectorfunction](#vectorset-and-vectorfunction)
-  - [Interpolating](#interpolating)
-  - [Checking](#checking)
-- [Inversion](#inversion)
-  - [Xarray](#xarray)
+- [Introduction](#-introduction)
+- [Usage](#-usage)
+  - [Vectorset and Vectorfunction](#-vectorset-and-vectorfunction)
+  - [Interpolating](#-interpolating)
+  - [Checking](#-checking)
+  - [Scaling](#-scaling)
+- [Inversion](#-inversion)
+  - [Xarray](#-xarray)
 
 <!-- /code_chunk_output -->
 
@@ -70,6 +71,23 @@ checker=DistanceChecker(vf, threshold=0.1) #points are valid if the (euclidean) 
 checker=BoxChecker(vf) #Check if new points are within the bounding box of the input points, defined by the minimal/maximal extent of the input point cloud in each direction
 checker=ConvexHullChecker(vs)#Calculate the convex hull around the point cloud
 ```
+### Scaling
+If you have parameters with very different scales, it can be necessary to normalize them before interpolation, depending on the chosen interpolator. Some interpolators like `NeighbourInterpolator` therefore have a `norm` argument.
+```python
+from luti import NeighbourInterpolator
+ni=NeighbourInterpolator(vf, norm=True) #scale all dimensions to [0,1] before any interpolation
+from luti import UnitScaler
+ni=NeighbourInterpolator(vf, norm=UnitScaler()) #you can explicitly provide a scaler
+```
+`scikit-learn` provides many different scalers in its preprocessing namespace. You can convert them to `luti Scaler` objects  using the provided `sklearn_scaler_factory`.
+```python
+from luti import sklearn_scaler_factory
+import sklearn as skl
+standardScaler=sklearn_scaler_factory(skl.preprocessing.StandardScaler())
+ni=NeighbourInterpolator(vf, norm=standardScaler)
+```
+
+
 ## Inversion
 In science, an often encountered problem is the inversion of a model: Given some measurements and a model, we want to find the input parameters to model the measurements. While a general approach could be e.g. a gradient descent, for a "smooth" model a lookup table can be much faster, especially if the amount of measurements exceeds the set of possible input parameters. In `luti`, such an inversion is straightforward.
 ```python

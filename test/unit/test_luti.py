@@ -90,6 +90,23 @@ class TestVectorfunction(ut.TestCase):
         xrt.assert_equal(self.points_cubic, new.Points)
         xrt.assert_equal(self.values_cubic, new.Values)
 
+    def test_copy(self):
+        vf=lut.Vectorfunction(np.array([1,2]), np.array([1,2]))
+        vfc=vf #no copy
+        vf.values[0,0]=2
+        assert(vfc.values[0,0]==2)
+        vfc=vf.copy() #deep copy
+        vf.values[0,0]=3
+        assert(vfc.values[0,0]==2)
+
+class TestScaler(ut.TestCase):
+    def test_unitscaler(self):
+        vs=lut.Vectorset(np.array([-3,-1,1,2]))
+        scaler=lut.UnitScaler()
+        npt.assert_allclose(scaler.fit_transform(vs).get_points()[:,0], [0,2/5, 4/5,1]) #values between 0 and 1
+        vs=lut.Vectorset(np.array([-5,3])) #now test the initialized scaler
+        npt.assert_allclose(scaler.transform(vs).get_points()[:,0], [-2/5, 6/5]) #values outside 0 and 1
+
 
 
 class TestChecker(ut.TestCase):
@@ -149,6 +166,9 @@ class TestChecker(ut.TestCase):
         dck = lut.Distancechecker(testvs, threshold=0.1, norm=False)
         mask = dck.check(testset)
         npt.assert_equal(mask, [True, False, False, False, False, False, False])
+        dck = lut.Distancechecker(testvs, threshold=0.1, norm=lut.IdentityScaler()) #explicitly provide scaler
+        mask = dck.check(testset)
+        npt.assert_equal(mask, [True, False, False, False, False, False, False])
 
 
 class TestInterpolators(ut.TestCase):
@@ -166,7 +186,7 @@ class TestInterpolators(ut.TestCase):
         values = 2*points
         self.vf1d= lut.Vectorfunction(points, values)
 
-    def test_interpolationinterpolator(self):
+    def test_linearinterpolator(self):
         # Issue: (0.5,0) not on 0.5 in interpolation!
         im = lut.LinearInterpolator(self.vf)
         testpoints = np.array([[0, 0], [0.5, 0.5], [0.2, 0.8]])
@@ -203,10 +223,18 @@ class TestInterpolators(ut.TestCase):
         testpoints = np.array([[0, 0], [0.5, 0], [0.25, 0.25], [0.75, 0.75], [1.25, 0]])
         testset = lut.Vectorset(testpoints)
         result = nm.interp(testset)
-        npt.assert_equal(result.get_points()[:, 0], [0, 0, 0, 1, 1])
-        npt.assert_equal(result.get_points()[:, 1], [0, 0, 0, 1, 0])
+        npt.assert_equal(result.get_points(), testpoints) #the points stay the same
         npt.assert_equal(result.get_values()[:, 0], [1, 1, 1, -1, 0])
         npt.assert_equal(result.get_values()[:, 1], [1, 1, 1, -1, 0])
+
+    def test_neighbourinterpolator_constant(self):
+        #Check if interpolation works with a constant value as well
+        vf=lut.Vectorfunction(np.ones(3)*2, np.ones(3)*2)
+        im=lut.NeighbourInterpolator(vf)
+        testpoints = np.array([1,2,3])
+        testset = lut.Vectorset(testpoints)
+        result = im.interp(testset)
+        npt.assert_allclose(result.get_values()[:, 0], [2,2,2])
 
     def test_gridddatainterpolator(self):
         im = lut.GriddataInterpolator(self.vf)
