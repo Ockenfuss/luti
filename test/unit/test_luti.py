@@ -98,6 +98,18 @@ class TestVectorfunction(ut.TestCase):
         vfc=vf.copy() #deep copy
         vf.values[0,0]=3
         assert(vfc.values[0,0]==2)
+    
+    def test_is_injective(self):
+        vf=lut.Vectorfunction(np.ones((3,3)), np.arange(9).reshape(3,3))
+        assert(vf.is_injective()==True)
+        vf=lut.Vectorfunction(np.ones((3,3)), np.ones((3,3)))
+        assert(vf.is_injective()==False)
+
+    def test_is_welldefined(self):
+        vf=lut.Vectorfunction(np.arange(9).reshape(3,3), np.ones((3,3)))
+        assert(vf.is_welldefined()==True)
+        vf=lut.Vectorfunction(np.ones((3,3)), np.ones((3,3)))
+        assert(vf.is_welldefined()==False)
 
 class TestScaler(ut.TestCase):
     def test_unitscaler(self):
@@ -229,12 +241,16 @@ class TestInterpolators(ut.TestCase):
 
     def test_neighbourinterpolator_constant(self):
         #Check if interpolation works with a constant value as well
-        vf=lut.Vectorfunction(np.ones(3)*2, np.ones(3)*2)
+        vf=lut.Vectorfunction(np.arange(3)*0.5, np.ones(3)*2) #well defined constant function
         im=lut.NeighbourInterpolator(vf)
         testpoints = np.array([1,2,3])
         testset = lut.Vectorset(testpoints)
         result = im.interp(testset)
         npt.assert_allclose(result.get_values()[:, 0], [2,2,2])
+
+        vf=lut.Vectorfunction(np.ones(3)*0.5, np.arange(3)*2)# function not well defined (one x value points to multiple y)
+        with self.assertRaises(ValueError):
+            lut.NeighbourInterpolator(vf)
 
     def test_gridddatainterpolator(self):
         im = lut.GriddataInterpolator(self.vf)

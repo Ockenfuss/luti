@@ -101,7 +101,7 @@ input_parameters=interpolator(vs_meas)
 checker=luti.ConvexHullChecker(lookup_table)
 checker.check_fill(input_parameters)#set values outside lookup table to NaN
 ```
-> :warning: So far, `luti` does not check for unambigous invertibility of `f:R^n->R^m`! If `f` is not invertible, invalid output will be produced.
+> :warning: `luti` checks only if the discrete representation `F:R^n->R^m` is injective, i.e. the inverse is well-defined! However, this does not mean that `f:R^n->R^m` is invertible. You have to check yourself that your original problem does allow for an inversion approach.
 ### Xarray
 The above approach still requires an interpolation for every measurement. For really big datasets, it might be convenient to create a completely inverted lookup table as xarray DataArray, based on a regular grid. At this point, it is instructive to think about the different ways to represent a vectorfunction in xarray
 

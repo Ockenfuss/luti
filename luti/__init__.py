@@ -97,6 +97,14 @@ class Vectorfunction(Vectorset):
     def copy(self):
         return Vectorfunction(self.get_points().copy(), self.get_values().copy())
 
+    def is_welldefined(self):
+        """Every point appears only once."""
+        return np.all(np.unique(self.get_points(), axis=0, return_counts=True)[1]==1)
+
+    def is_injective(self):
+        """Every value appears only once."""
+        return np.all(np.unique(self.get_values(), axis=0, return_counts=True)[1]==1)
+
 
 
 
@@ -269,6 +277,8 @@ class Interpolator(Scalable):
 
     
     def initialize(self, vectorfunction: Vectorfunction):
+        if not vectorfunction.is_welldefined():
+            raise ValueError("Vectorfunction must be well defined (no double points) to allow for interpolation.")
         self._initialize(self.scaler.fit_transform(vectorfunction))
     
     def _initialize(self, vectorfunction: Vectorfunction):
