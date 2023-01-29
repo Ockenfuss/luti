@@ -6,6 +6,8 @@ from luti.Helpers import xr_reshape
 # Idea: Input array in format 2) and invert, repeating the procedure on all additional dimensions.
 # Therefore, we cannot avoid apply_ufunc, which is why we have to write a numpy-inversion function
 def invert_data_array(data, input_params, output_dim, output_grid, interpolator=DefaultInterpolator(), checker=DefaultChecker()):
+    if not all([type(k)==str for k in output_grid.keys()]):
+        raise TypeError("The new dimension labels defined in 'output_grid' must be strings.")
     sampledim="d284632842" #create temporary, random dimensions
     newsampledim="d75011395620"
 
